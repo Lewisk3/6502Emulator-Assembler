@@ -1,0 +1,11 @@
+# depslib dependency file v1.0
+1543582056 source:f:\c or c++ projects\6502emulator\main.c
+	<stdio.h>
+	<stdlib.h>
+	<string.h>
+	<math.h>
+	<time.h>
+	"terminal.h"
+
+1543579718 f:\c or c++ projects\6502emulator\terminal.h
+
