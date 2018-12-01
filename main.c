@@ -77,7 +77,13 @@ typedef struct AssemblerLabel
     const char* name;
     sbyte_t relative;
     mem_t absolute;
-} ALabel;
+} ASM_Label;
+typedef struct AssemblerVar
+{
+    const char* name;
+    const char* data;
+    int datasize;
+} ASM_Var;
 
 void RunTerminal();
 bool initalize();
@@ -472,137 +478,297 @@ void CPU_Start()
 void RunTerminal()
 {
    // Label support.
-   char* buffer = calloc(1,100);
+   int buffsize = 0xFF;
+   char* buffer = calloc(1,buffsize);
    TermData* tdata;
    int label_c=0;
-   ALabel** labels = calloc(20,sizeof(ALabel));
+   int macro_c=0;
+   ASM_Label** labels = calloc(0xFF,sizeof(ASM_Label));
+   ASM_Var**   macros = calloc(0xFF,sizeof(ASM_Var));
+
    while(inTerminal)
    {
-       if(!(pCPU->Flags&fBreak))
-       {
-           label_c = 0;
-           CPU_Start();
-           pCPU->PC--;
-       }
-       char pbytes[7];
-       char* found; // Used for labels.
-       sbyte_t addr_rel = ((sbyte_t)(ProgramStart-pCPU->PC));
-       printf("%X[%02X]: ",pCPU->PC,(byte_t)addr_rel);
-       fgets(buffer,100,stdin);
-       for(int i = 0; i < label_c; i++)
-       {
-           found = strstr(buffer,labels[i]->name);
-           if( found != NULL )
+        if(!(pCPU->Flags&fBreak))
+        {
+            //label_c = 0;
+            CPU_Start();
+            pCPU->PC--;
+        }
+        char pbytes[7];
+        char* found; // Used for labels.
+        sbyte_t addr_rel = ((sbyte_t)(ProgramStart-pCPU->PC));
+        printf("%04X[%02X]: ",pCPU->PC,(byte_t)addr_rel);
+        fgets(buffer,buffsize,stdin);
+        FilteredInput finp = FilterInput(buffer,buffsize);
+        char* fbuffer = finp.inp;
+
+        // Decode assembler-side objects.
+        bool parsed = false;
+        for(int i = 0; i < macro_c; i++)
+        {
+            if(!strncmp(fbuffer,"def",3)) break;
+            found = strstr(buffer,macros[i]->name);
+            char* mname = macros[i]->name;
+            if( found != NULL )
+            {
+                 char rbuffer[macros[i]->datasize];
+                 strncpy(rbuffer,macros[i]->data,macros[i]->datasize);
+                 //printf("[DEBUG] rbuffer %s\n",rbuffer);
+                 strstr_replace(buffer,found,mname,rbuffer);
+                 parsed = true;
+                 //printf("[INFO] Resolve buffered input: %s\n",buffer);
+            }
+        }
+        for(int i = 0; i < label_c; i++)
+        {
+            if(!strncmp(fbuffer,"::",2)) break;
+            if(!strncmp(fbuffer,"def",3)) break;
+            found = strstr(buffer,labels[i]->name);
+            char* lname = labels[i]->name;
+            if( found != NULL )
+            {
+                 // Setup replacement buffer, convert label to ABS value.
+                 char rbuffer[6];
+                 sprintf(rbuffer,"$%04X",labels[i]->absolute);
+                 // Replace label name with the replace buffer.
+                 strstr_replace(buffer,found,lname,rbuffer);
+                 parsed = true;
+                // printf("[INFO] Resolve buffered input: %s\n",buffer);
+            }
+        }
+        // Re-filter input if it was parsed.
+        if(parsed)
+        {
+            free(finp.inp);
+            finp = FilterInput(buffer,buffsize);
+            char* fbuffer = finp.inp;
+        }
+        // Assembler preprocessor
+        if(!strncmp(fbuffer,"::",2))
+        {
+           bool duplicate = false;
+           ASM_Label* label = malloc(sizeof(ASM_Label));
+           char* name = malloc(strlen(fbuffer)-1);
+           strncpy(name,fbuffer+2,strlen(fbuffer)-1);
+           for(int i = 0; i < label_c; i++)
            {
-               for(int x = 0; x < strlen(labels[i]->name); x++) *(found+i)=' ';
-               sprintf(found,"$%04X",labels[i]->absolute);
+               if(!strncmp(labels[i]->name,name,strlen(name)))
+               {
+                   duplicate = true;
+                   printf("[WARN] Label \"%s\" redefined: $%04X -> $%04X. \n",name,labels[i]->absolute,pCPU->PC);
+                   labels[i]->absolute = pCPU->PC;
+                   labels[i]->relative = addr_rel;
+               }
            }
-       }
-       tdata = AssembleCMD(buffer,100,pCPU->PC);
-       char* fbuffer = tdata->finp.inp;
-       if(tdata->bytecode==0xFF)
-       {
-           // Labels!
-           if(!strncasecmp(fbuffer,"::",2))
+           if(!duplicate)
            {
-               ALabel* label = malloc(sizeof(ALabel));
-               char* name = malloc(strlen(fbuffer)-2);
-               strncpy(name,fbuffer+2,strlen(fbuffer)-1);
-               label->name = name;
-               label->relative = addr_rel;
-               label->absolute = pCPU->PC;
-               *(labels+label_c) = label;
-               label_c++;
+                label->name = name;
+                label->relative = addr_rel;
+                label->absolute = pCPU->PC;
+                *(labels+label_c) = label;
+                //printf("[INFO] Label %d,%s defined at :> $%04X\n",label_c,name,pCPU->PC);
+                label_c++;
            }
-           else if(!strncmp(fbuffer,"RUNP",4))
+           continue;
+        }
+        else if(!strncmp(fbuffer,"def",3))
+        {
+           ASM_Var* duplicate = NULL;
+           ASM_Var* avar = malloc(sizeof(ASM_Var));
+           char* name_begin;
+           char* name_end;
+           char* name_copy;
+           char* data_copy;
+           // Find name
+           name_begin = fbuffer+3;
+           name_end = strstr(fbuffer,":");
+           if(!name_end)
            {
-               pCPU->PC = ProgramStart;
-               flagset(fBreak,false);
+               printf("[USRERR] Cannot resolve name as it wasn't colon terminated.\n");
+               continue;
            }
-           else if(!strncmp(fbuffer,"RUN",3))
-               flagset(fBreak,false);
-           else if(!strncmp(fbuffer,"EXIT",4))
+           int namesize = (name_end-name_begin);
+           name_copy = malloc(namesize);
+           name_copy[namesize] = '\0';
+           strncpy(name_copy,name_begin,namesize);
+           // Check if duplicate
+           for(int i = 0; i < macro_c; i++)
            {
-               free(tdata->finp.inp);
-               free(tdata);
-               inTerminal = false;
+               if(!strncmp(macros[i]->name,name_copy,strlen(name_copy)))
+               {
+                   duplicate = macros[i];
+               }
            }
-           else if(!strncmp(fbuffer,"=P",2))
-               pCPU->PC = ProgramStart;
-           else if(!strncmp(fbuffer,"=",1))
+           // Find macro data.
+           int datasize = strlen(fbuffer)-((name_end+1)-fbuffer);
+          // printf("[INFO] Macro datasize: %d\n",datasize);
+           data_copy = malloc(datasize);
+           data_copy[datasize] = '\0';
+           strncpy(data_copy,name_end+1,datasize);
+           if(duplicate)
            {
-               char pc[4];
-               int offs = (*(fbuffer+1)=='$')?2:1;
-               strncpy(pc,fbuffer+offs,4);
-               mem_t addr = strtol(pc,NULL,16);
-               pCPU->PC = addr;
+               free(duplicate->data);
+               duplicate->data = data_copy;
+               duplicate->datasize = datasize;
+               printf("[WARN] Macro redefined: %s\n",data_copy);
+               continue;
            }
-           else if(!strncmp(fbuffer,"PC=",1))
+           //printf("[INFO] Macro defined: %s -> %s\n",name_copy,data_copy);
+           avar->data = data_copy;
+           avar->name = name_copy;
+           avar->datasize = datasize;
+           *(macros + macro_c) = avar;
+           macro_c ++;
+
+           continue;
+        }
+        else if(!strncasecmp(fbuffer,"BCD",3))
+        {
+           char cbytes[strlen(fbuffer)-3];
+           strncpy(cbytes,fbuffer+3,strlen(fbuffer)-3);
+           char* token = strtok(cbytes,",");
+           int tcount=0;
+           while(token)
            {
-               char pc[4];
-               int offs = (*(fbuffer+3)=='$')?4:3;
-               strncpy(pc,fbuffer+offs,4);
-               mem_t addr = strtol(pc,NULL,16);
-               pCPU->PC = addr;
-           }
-           else if(!strncmp(fbuffer,"++",2))
+               // Convert to byte_t and add to PC.
+               if( (*token != '$' && *token != '#')  || strlen(token) > 3)
+               {
+                   printf("[ERROR] Syntax error on token #%d\n",tcount);
+                   break;
+               }
+               int base = 16;
+               if(*token == '#') base = 10;
+               byte_t data = strtol(token+1,NULL,base);
+               poke(pCPU->PC,data);
                pCPU->PC++;
-           else if(!strncmp(fbuffer,"--",2))
-               pCPU->PC--;
-           else if(!strncmp(fbuffer,"STEP",4))
-           {
-               pCPU->STEP = !pCPU->STEP;
-               if(pCPU->STEP)
-                   printf("Stepping mode ON.\n");
-               else
-                   printf("Stepping mode OFF.\n");
+               printf("%04X=$%02X\n",pCPU->PC,data);
+               tcount++;
+               token = strtok(0,",");
            }
-           else if(!strncmp(fbuffer,"RESET",5))
-           {
-               label_c = 0;
-               uTimer = clock();
-               initalize();
-               wait_timer();
-           }
-           else if(!strncmp(fbuffer,"READ",4)|!strncmp(fbuffer,"R",1))
-               printf("%X -> %X\n",pCPU->PC,peek(pCPU->PC));
-           else if(!strncmp(fbuffer,"HELP",4))
-           {
-                printf("\n        .: LIST OF COMMANDS :.\n\n");
-                printf("RUNP   : Runs program starting at 0x0600\n");
-                printf("RUN    : Runs program at current addr\n");
-                printf("=      : Sets PC to numeric argument\n");
-                printf("PC=    : Check above\n");
-                printf("=P     : Set PC to 0x0600\n");
-                printf("++     : PC++\n");
-                printf("--     : PC--\n");
-                printf("STEP   : Toggles program stepping\n");
-                printf("RESET  : Resets CPU and Assembler\n");
-                printf("EXIT   : Exits program\n");
-                printf("\n        .: Assembler Quirks :.\n\n");
-                printf("::NAME : Declares NAME as Label at current addr\n\n");
-           }
-           else
-           {
-               printf("Syntax error\n");
-           }
-       }
-       else
-       {
-           mem_t pc = pCPU->PC;
-           // Insert instruction/bytes into RAM.
-           poke(pc,tdata->bytecode);
-           if(tdata->bytes > 1) poke(pc+1,tdata->H);
-           if(tdata->bytes > 2) poke(pc+2,tdata->L);
-           pCPU->PC += tdata->bytes;
-       }
-       free(tdata->finp.inp);
-       free(tdata);
+           continue;
+        }
+
+        // Terminal commands
+        else if(!strncasecmp(fbuffer,"RUNP",4))
+        {
+           pCPU->PC = ProgramStart;
+           flagset(fBreak,false);
+           continue;
+        }
+        else if(!strncasecmp(fbuffer,"RUN",3))
+        {
+            flagset(fBreak,false);
+            continue;
+        }
+        else if(!strncasecmp(fbuffer,"EXIT",4))
+        {
+            inTerminal = false;
+        }
+        else if(!strncasecmp(fbuffer,"=P",2))
+        {
+            pCPU->PC = ProgramStart;
+            continue;
+        }
+        else if(!strncasecmp(fbuffer,"=",1))
+        {
+            char pc[4];
+            int offs = (*(fbuffer+1)=='$')?2:1;
+            strncpy(pc,fbuffer+offs,4);
+            mem_t addr = strtol(pc,NULL,16);
+            pCPU->PC = addr;
+            continue;
+        }
+        else if(!strncasecmp(fbuffer,"PC=",1))
+        {
+            char pc[4];
+            int offs = (*(fbuffer+3)=='$')?4:3;
+            strncpy(pc,fbuffer+offs,4);
+            mem_t addr = strtol(pc,NULL,16);
+            pCPU->PC = addr;
+            continue;
+        }
+        else if(!strncmp(fbuffer,"++",2))
+        {
+            pCPU->PC++;
+            continue;
+        }
+        else if(!strncmp(fbuffer,"--",2))
+        {
+            pCPU->PC--;
+            continue;
+        }
+        else if(!strncasecmp(fbuffer,"STEP",4))
+        {
+            pCPU->STEP = !pCPU->STEP;
+            if(pCPU->STEP)
+                printf("[INFO] Stepping mode ON.\n");
+            else
+                printf("[INFO] Stepping mode OFF.\n");
+            continue;
+        }
+        else if(!strncasecmp(fbuffer,"RESET",5))
+        {
+            label_c = 0;
+            uTimer = clock();
+            initalize();
+            wait_timer();
+            continue;
+        }
+        else if(!strncasecmp(fbuffer,"READ",4)|!strncasecmp(fbuffer,"R",1))
+        {
+            printf("%X -> %X\n",pCPU->PC,peek(pCPU->PC));
+            continue;
+        }
+        else if(!strncasecmp(fbuffer,"HELP",4))
+        {
+            printf("\n        .: LIST OF COMMANDS :.\n\n");
+            printf("RUNP   : Runs program starting at 0x0600\n");
+            printf("RUN    : Runs program at current addr\n");
+            printf("PC=,=  : Sets PC to numeric argument\n");
+            printf("=P     : Set PC to 0x0600\n");
+            printf("++,--  : PC++,PC--\n");
+            printf("READ,R : Exports data at PC");
+            printf("STEP   : Toggles program stepping\n");
+            printf("RESET  : Resets CPU and Assembler\n");
+            printf("EXIT   : Exits program\n");
+            printf("\n        .: Assembler Quirks :.\n\n");
+            printf("::NAME : Declares NAME as Label at current addr\n\n");
+            continue;
+        }
+
+        // Assemble code.
+        tdata = AssembleCMD(buffer,100,pCPU->PC);
+        if(tdata != NULL)
+        {
+            if(tdata->bytecode == 0xFF)
+            {
+                printf("[ERROR] Incompatible operation: %s, %s\n",tdata->CMD,tdata->modestr);
+                continue;
+            }
+            mem_t pc = pCPU->PC;
+            // Insert instruction/bytes into RAM.
+            poke(pc,tdata->bytecode);
+            if(tdata->bytes > 1) poke(pc+1,tdata->H);
+            if(tdata->bytes > 2) poke(pc+2,tdata->L);
+            pCPU->PC += tdata->bytes;
+        }
+        else if(inTerminal)
+        {
+            printf("[ERROR] Syntax error\n");
+        }
+        free(finp.inp);
+        free(tdata);
    }
    for(int i = 0; i < label_c; i++)
    {
-       free(labels[i]->name);
-       free(labels[i]);
+        free(labels[i]->name);
+        free(labels[i]);
+   }
+   for(int i = 0; i < macro_c; i++)
+   {
+        free(macros[i]->name);
+        free(macros[i]->data);
+        free(macros[i]);
    }
    free(buffer);
 }
