@@ -50,15 +50,14 @@ struct CPU
 
 static byte_t* pRAM;
 static struct CPU* pCPU;
-
-// Routine prototypes
 static double uTimer;
 static bool inTerminal;
 
-inline bool check_reserved(mem_t);
+// Routine prototypes
 inline void wait_timer();
 inline void SetPC(mem_t);
 inline void SetReg(byte_t, byte_t);
+inline bool check_reserved(mem_t);
 inline byte_t GetReg(byte_t);
 
 byte_t peek(mem_t);
@@ -70,7 +69,6 @@ void poke(mem_t, byte_t);
 void stack_push(byte_t);
 void flagset(byte_t, bool);
 void setflags(byte_t);
-void update_flag(bool, byte_t, byte_t, byte_t, byte_t);
 void load_program(const char* , long);
 int run_instr(byte_t,bool);
 
@@ -400,13 +398,6 @@ int run_instr(byte_t c, bool demo)
     // Very useful for running just to get how many bytes an instruction takes.
     if(demo) return ticks;
 
-    if(pCPU->STEP)
-    {
-        printf("\n-------------------------");
-        printf("\nRunning: %X", c);
-    }
-
-    // SetReg is used here to trigger flags.
     if(!switchf)
     {
         flagset(fCarry,C);
@@ -422,19 +413,21 @@ int run_instr(byte_t c, bool demo)
         pCPU->Flags = flags;
     }
 
+    // SetReg is used here to trigger flags.
     if(pCPU->A!=A)SetReg(rA,A);
     if(pCPU->X!=X)SetReg(rX,X);
     if(pCPU->Y!=Y)SetReg(rY,Y);
 
-    pCPU->PC = pc;
-
     if(pCPU->STEP)
     {
+        printf("\n-------------------------");
+        printf("\nRunning: %X", c);
         printf_cpuinfo();
         printf("-------------------------\n");
     }
-    pCPU->PC += ticks;
-    wait_timer(); // Wait next icycle.
+    pCPU->PC = pc+ticks;
+    // Wait next icycle.
+    wait_timer();
     return ticks;
 }
 
