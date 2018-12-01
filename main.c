@@ -730,9 +730,10 @@ void RunTerminal()
             printf("READ,R : Exports data at PC");
             printf("STEP   : Toggles program stepping\n");
             printf("RESET  : Resets CPU and Assembler\n");
-            printf("EXIT   : Exits program\n");
-            printf("\n        .: Assembler Quirks :.\n\n");
-            printf("::NAME : Declares NAME as Label at current addr\n\n");
+            printf("EXIT   : Exits program\n\n");
+            printf("\n                    .: Assembler Quirks :.\n\n");
+            printf("::NAME         | Declares NAME as Label at current addr\n");
+            printf("def NAME: DATA | Creates an alias for DATA under NAME (A macro)\n\n");
             continue;
         }
 
