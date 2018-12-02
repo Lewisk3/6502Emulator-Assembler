@@ -106,8 +106,6 @@ int main()
     {
         printf("Failed to initialize.");
     }
-    if(pRAM == NULL) printf("HOW?!!?");
-    if(pCPU == NULL) printf("\nImpossible!");
     free(pRAM);
     free(pCPU);
     return 0;
@@ -795,10 +793,6 @@ void RunTerminal()
         free(macros[i]->name);
         free(macros[i]->data);
         free(macros[i]);
-   }
-   if(buffer == NULL)
-   {
-       printf("[FATAL] Buffer disappeared into the ether somehow...");
    }
    free(buffer);
 }
