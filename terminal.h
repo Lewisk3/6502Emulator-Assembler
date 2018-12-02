@@ -138,7 +138,7 @@ FilteredInput* FilterInput(char* CMD, long bytes)
     char* buffer = malloc(bytes);
     if(buffer == NULL)
     {
-        printf("[FATAL] Unsolvable error because C sucks balls.\n");
+        printf("[FATAL] Failed to allocate buffer space! \n");
     }
     char* src = CMD;
     char* aux = buffer;
