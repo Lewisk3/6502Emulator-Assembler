@@ -477,8 +477,6 @@ void CPU_Start()
 // Assembler
 void RunTerminal()
 {
-   #define safecontinue if(finp.inp)free(finp.inp);if(tdata)free(tdata);continue
-
    // Label support.
    int buffsize = 0xFF;
    char* buffer = calloc(1,buffsize);
