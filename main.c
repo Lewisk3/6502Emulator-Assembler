@@ -571,8 +571,8 @@ void RunTerminal()
                if(!strncmp(labels[i]->name,name,strlen(name)))
                {
                    duplicate = true;
-                   free(name);
                    printf("[WARN] Label \"%s\" redefined: $%04X -> $%04X. \n",name,labels[i]->absolute,pCPU->PC);
+                   free(name);
                    labels[i]->absolute = pCPU->PC;
                    labels[i]->relative = addr_rel;
                }
