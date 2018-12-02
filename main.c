@@ -756,7 +756,8 @@ void RunTerminal()
             printf("EXIT   : Exits program\n\n");
             printf("\n                    .: Assembler Quirks :.\n\n");
             printf("::NAME         | Declares NAME as Label at current addr\n");
-            printf("def NAME: DATA | Creates an alias for DATA under NAME (A macro)\n\n");
+            printf("def NAME: DATA | Creates an alias for DATA under NAME (A macro)\n");
+            printf("bcd $00,...    | Writes bytes to memory at PC\n\n");
             nextcmd;
         }
         // Assemble code.
