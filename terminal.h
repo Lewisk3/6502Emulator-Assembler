@@ -10,7 +10,7 @@ typedef struct FilteredInput
 
 typedef struct TerminalData
 {
-    char CMD[4];
+    const char CMD[4];
     const char* modestr;
     int mode;
     unsigned char bytecode;
@@ -18,10 +18,11 @@ typedef struct TerminalData
     long H,L;
 } TermData;
 
-TermData* TerminalCMD( char* , long );
+TermData* TerminalCMD( char* );
 unsigned char AssembleI( const char* , int );
-FilteredInput FilterInput( char* , long );
+FilteredInput* FilterInput( char* , long );
 void strstr_replace( char* , char* , const char* , const char* );
+void delete_finp( FilteredInput* );
 
 typedef enum
 {
@@ -113,7 +114,7 @@ void strstr_replace(char* buffer, char* buffer_index, const char* replacestr, co
     // Load prefix_buffer with prefix of string before replacestr occurs
     // Insert suffix of string behind prefix_buffer, include replacestr.
     // Load buffer with prefix_buffer. fin.
-    int buffsize = 4096;
+    int buffsize = strlen(buffer);
     char prefix_buffer[buffsize];
     int fsize = buffer_index-buffer;
     strncpy(prefix_buffer, buffer, fsize);
@@ -124,39 +125,45 @@ void strstr_replace(char* buffer, char* buffer_index, const char* replacestr, co
     strncpy(buffer,prefix_buffer,buffsize);
 }
 
-FilteredInput FilterInput(char* CMD, long bytes)
+void delete_finp(FilteredInput* inp)
+{
+    free(inp->inp);
+    free(inp);
+}
+
+FilteredInput* FilterInput(char* CMD, long bytes)
 {
     // Used for running terminal commands.
     #define filter(C) C!='\t'&&C!=' '&&C!='\n'
-    register int i;
-    unsigned int nbytes=0;
-    for(i = 0; i < bytes; i++)
+    char* buffer = malloc(bytes);
+    if(buffer == NULL)
     {
-        if(CMD[i]=='\0') break;
-        if(filter(CMD[i])) nbytes++;
+        printf("[FATAL] Unsolvable error because C sucks balls.\n");
     }
-    char* buffer = malloc(nbytes+1);
-    buffer[nbytes] = '\0';
-    nbytes = 0;
-    for(i = 0; i < bytes; i++)
-    {
-        if(CMD[i]=='\0') break;
-        if(filter(CMD[i]))
+    char* src = CMD;
+    char* aux = buffer;
+    int nbytes = 0;
+    while(*src) {
+        if(filter(*src))
         {
-            buffer[nbytes] = CMD[i];
+            *buffer++ = *src;
             nbytes++;
         }
+        src++;
     }
-    FilteredInput finput = (FilteredInput){buffer,nbytes};
+    *buffer = 0x0;
+
+    FilteredInput* finput = malloc(sizeof(FilteredInput));
+    finput->inp = aux;
+    finput->nbytes = nbytes;
     return finput;
 }
 
 // Terminal
-TermData* AssembleCMD(char* CMD, long bytes, unsigned short PC)
+TermData* AssembleCMD(FilteredInput* fCMD, unsigned short PC)
 {
-    FilteredInput fCMD = FilterInput(CMD,bytes);
-    char* buffer = fCMD.inp;
-    int nbytes = fCMD.nbytes;
+    char* buffer = fCMD->inp;
+    int nbytes = fCMD->nbytes;
     if(nbytes < 3) return NULL;
     long opH=0;
     long opL=0;
@@ -253,7 +260,7 @@ TermData* AssembleCMD(char* CMD, long bytes, unsigned short PC)
                 unsigned short abs  = (unsigned short)(opH*256)+opL;
                 signed char rel = (signed char)(abs-PC)-2; // -2 for BNE bytes.
                 opH = (unsigned char)rel;
-                //printf("$%04X -> %02X\n",abs,(unsigned char)rel);
+                printf("[ABSREL]: %04X -> %02X\n",abs,(unsigned char)rel);
             }
             else
             {
