@@ -794,6 +794,8 @@ void ParseTerminalInput(char* buffer, int bsize, ASM_LabelList* labels, ASM_Macr
 		file[buffsize - 8] = '\0';
 		strncpy(file, fbuffer + 8, buffsize - 8);
 		FILE* fptr = fopen(file, "r");
+		#define ParseEOF() if (filetoken + lsize > auxdata + file_bytes + 1) { lsize = (auxdata + file_bytes) - filetoken; if (lsize < 0){printf("[INFO] Exceeded EOF caught.\n"); break;} filetoken[lsize] = '\0';}
+
 		if (fptr == NULL)
 		{
 			printf("[ERROR] Failed to open file \"%s\"\n", file);
@@ -839,13 +841,9 @@ void ParseTerminalInput(char* buffer, int bsize, ASM_LabelList* labels, ASM_Macr
 			{
 				lsize = strlen(filetoken);
 				// Handle EOF (Detects if the last string isn't null terminated)
-				if (filetoken + lsize > auxdata + file_bytes + 1)
-				{
-					lsize = (auxdata + file_bytes) - filetoken;
-					filetoken[lsize] = '\0';
-				}
+				ParseEOF();
+
 				fline = FilterInput(filetoken, lsize);
-				printf("Filtered input: %s\n", fline->inp);
 				if (!strncasecmp(fline->inp, "def", 3))
 				{
 					ParseTerminalInput(filetoken, lsize, labels, macros, tdata);
@@ -873,11 +871,8 @@ void ParseTerminalInput(char* buffer, int bsize, ASM_LabelList* labels, ASM_Macr
 				if (flabel_c == 0) break;
 				lsize = strlen(filetoken);
 				// Handle EOF (Detects if the last string isn't null terminated)
-				if (filetoken + lsize > auxdata + file_bytes + 1)
-				{
-					lsize = (auxdata + file_bytes) - filetoken;
-					filetoken[lsize] = '\0';
-				}
+				ParseEOF();
+
 				fline = FilterInput(filetoken, buffsize);
 				if (!strncasecmp(fline->inp, "def", 3))
 				{
@@ -924,7 +919,6 @@ void ParseTerminalInput(char* buffer, int bsize, ASM_LabelList* labels, ASM_Macr
 						fline = NULL;
 					}
 					fline = FilterInput(tmpstr, lsize);
-					printf("Fline [%i]: %s\n", lsize, fline->inp);
 					TermData* asmi = AssembleCMD(fline, pCPU->PC);
 					if (asmi->bytecode == 0xFF)
 					{
@@ -950,7 +944,6 @@ void ParseTerminalInput(char* buffer, int bsize, ASM_LabelList* labels, ASM_Macr
 					tmpstr = NULL;
 				}
 				filetoken = strtok(0, "\n");
-				printf("Endpoint\n");
 			}
 			for (int i = 0; i < flabel_c; ++i)
 			{
@@ -969,11 +962,8 @@ void ParseTerminalInput(char* buffer, int bsize, ASM_LabelList* labels, ASM_Macr
 				linenum++;
 				lsize = strlen(filetoken);
 				// Handle EOF (Detects if the last string isn't null terminated)
-				if (filetoken + lsize > auxdata + file_bytes + 1)
-				{
-					lsize = (auxdata + file_bytes) - filetoken;
-					filetoken[lsize] = '\0';
-				}
+				ParseEOF();
+
 				fline = FilterInput(filetoken, lsize);
 				if (!(!strncasecmp(fline->inp, "def", 3) || !strncmp(fline->inp, "::", 2)))
 				{
@@ -998,6 +988,34 @@ void ParseTerminalInput(char* buffer, int bsize, ASM_LabelList* labels, ASM_Macr
 			free(auxdata);
 			nextcmd;
 		}
+	}
+	else if (!strncasecmp(fbuffer, "export", 5))
+	{
+		char* str_exportBytes = fbuffer+6;
+		mem_t num_exportBytes = (mem_t)strtol(str_exportBytes, NULL, 16);
+		if (num_exportBytes > 0 || num_exportBytes > 0xFFFF)
+		{
+			printf("Exporting %i bytes: [%04x :> %04x]", num_exportBytes, pCPU->PC, pCPU->PC+num_exportBytes);
+			FILE* output = fopen("exported_ram.bin", "w");
+			if (output)
+			{
+				// Write RAM to file
+				printf("\nExporting bytes: ");
+				for(mem_t i = 0; i <= num_exportBytes; i++)
+				{ 
+					byte_t bytemove = peek(pCPU->PC + i);
+					fwrite(&bytemove, sizeof(byte_t), 1, output);
+					printf("%02X ", bytemove);
+				}
+				fclose(output);
+			}
+			printf("\nData exported to: exported_ram.bin.\n");
+		}
+		else
+		{	
+			printf("[EXPORT] Invalid size! [Size is parsed as Hexadecimal] \n");
+		}
+		nextcmd;
 	}
 	else if (!strncasecmp(fbuffer, "HELP", 4))
 	{
