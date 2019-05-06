@@ -142,6 +142,11 @@ FilteredInput* FilterInput(char* CMD, long bytes)
 {
 	// Used for running terminal commands.
 	#define filter(C) C!='\t'&&C!=' '&&C!='\n'
+	if (bytes < 0)
+	{
+		printf("[FilteredInput] WARN: Negative buffer bytes -> %i", bytes);
+		bytes = 0;
+	}
 	char* buffer = calloc(1, bytes+1);
 	buffer[bytes] = '\0';
 	if (buffer == NULL)
